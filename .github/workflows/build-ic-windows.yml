@@ -74,21 +74,38 @@ jobs:
           New-Item -ItemType Directory -Force -Path target\release | Out-Null
           Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.win/x64/sciter.dll -OutFile target\release\sciter.dll
 
-      - name: Compilation (release)
-        run: cargo build --release
-
-      - name: Renommer l'exécutable
+      - name: Inliner les ressources d'interface Sciter (corrige la fenêtre blanche)
         run: |
-          if (Test-Path target\release\rustdesk.exe) {
-            Copy-Item target\release\rustdesk.exe "target\release\PriseEnMain-IC-Windows.exe" -Force
+          if (Test-Path res\inline-sciter.py) {
+            python res\inline-sciter.py
           } else {
-            Write-Error "rustdesk.exe non généré"; exit 1
+            Write-Error "res\inline-sciter.py introuvable (structure du dépôt modifiée ?)"; exit 1
           }
 
-      - name: Publier l'artefact
+      - name: Compilation (release)
+        run: cargo build --release --features inline
+
+      - name: Empaqueter en EXE unique (portable packer RustDesk)
+        run: |
+          if (-not (Test-Path target\release\rustdesk.exe)) { Write-Error "rustdesk.exe non généré"; exit 1 }
+          # Dossier propre contenant uniquement l'exe + la dll à embarquer
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item target\release\rustdesk.exe dist\ -Force
+          Copy-Item target\release\sciter.dll  dist\ -Force
+          # Empaquetage via l'outil RustDesk (génère un exe auto-extractible unique)
+          Push-Location libs\portable
+          python generate.py -f ..\..\dist -o . -e ..\..\dist\rustdesk.exe
+          Pop-Location
+          Write-Host "--- EXE produits ---"
+          Get-ChildItem -Recurse libs\portable -Filter *.exe | ForEach-Object { Write-Host $_.FullName $_.Length }
+          # On prend le plus gros .exe (= l'exe empaqueté) et on le renomme
+          $packed = Get-ChildItem -Recurse libs\portable -Filter *.exe | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $packed) { Write-Error "Aucun exe portable produit"; exit 1 }
+          Copy-Item $packed.FullName "PriseEnMain-IC-Windows.exe" -Force
+          Write-Host "Exe final : PriseEnMain-IC-Windows.exe ($($packed.Length) octets)"
+
+      - name: Publier l'artefact (exe unique)
         uses: actions/upload-artifact@v4
         with:
           name: PriseEnMain-IC-Windows
-          path: |
-            target\release\PriseEnMain-IC-Windows.exe
-            target\release\sciter.dll
+          path: PriseEnMain-IC-Windows.exe
