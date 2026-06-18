@@ -1,0 +1,89 @@
+# ============================================================================
+#  Build d'un client RustDesk "Info-Concepts" pour Windows x64 (interface Sciter)
+#  Serveur et clé pré-intégrés (rustdesk.ic-cloud.fr).
+#  A placer dans le fork :  .github/workflows/build-ic-windows.yml
+#  Déclenchement MANUEL uniquement (onglet Actions -> Run workflow).
+# ============================================================================
+name: Build RustDesk Info-Concepts (Windows x64)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IC_SERVER: "rustdesk.ic-cloud.fr"
+  IC_KEY: "4ciHrongHyOhrUM1bot6qSEvbNQ6dB94ZeD5fg2eL6E="
+
+jobs:
+  build-windows-x64:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout (avec sous-modules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Rust (stable, MSVC x64)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: LLVM / Clang (pour bindgen)
+        run: |
+          choco install -y llvm
+          echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Dépendances natives (vcpkg)
+        run: |
+          git clone https://github.com/microsoft/vcpkg $env:USERPROFILE\vcpkg
+          & $env:USERPROFILE\vcpkg\bootstrap-vcpkg.bat
+          echo "VCPKG_ROOT=$env:USERPROFILE\vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append
+          & $env:USERPROFILE\vcpkg\vcpkg.exe install libvpx:x64-windows-static libyuv:x64-windows-static opus:x64-windows-static aom:x64-windows-static
+
+      - name: Injecter serveur + clé Info-Concepts dans config.rs
+        run: |
+          $cfg = "libs/hbb_common/src/config.rs"
+          if (-not (Test-Path $cfg)) { Write-Error "config.rs introuvable ($cfg)"; exit 1 }
+          $c = Get-Content $cfg -Raw
+          $c = [regex]::Replace($c, 'pub const RENDEZVOUS_SERVERS: &\[&str\] = &\[[^\]]*\];', 'pub const RENDEZVOUS_SERVERS: &[&str] = &["' + $env:IC_SERVER + '"];')
+          $c = [regex]::Replace($c, 'pub const RS_PUB_KEY: &str = "[^"]*";', 'pub const RS_PUB_KEY: &str = "' + $env:IC_KEY + '";')
+          Set-Content $cfg $c -Encoding UTF8
+          Write-Host "--- Vérification ---"
+          Select-String -Path $cfg -Pattern 'RENDEZVOUS_SERVERS|RS_PUB_KEY'
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Sciter DLL
+        run: |
+          New-Item -ItemType Directory -Force -Path target\release | Out-Null
+          Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/c-smile/sciter-sdk/master/bin.win/x64/sciter.dll -OutFile target\release\sciter.dll
+
+      - name: Compilation (release)
+        run: cargo build --release
+
+      - name: Renommer l'exécutable
+        run: |
+          if (Test-Path target\release\rustdesk.exe) {
+            Copy-Item target\release\rustdesk.exe "target\release\PriseEnMain-IC-Windows.exe" -Force
+          } else {
+            Write-Error "rustdesk.exe non généré"; exit 1
+          }
+
+      - name: Publier l'artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PriseEnMain-IC-Windows
+          path: |
+            target\release\PriseEnMain-IC-Windows.exe
+            target\release\sciter.dll
