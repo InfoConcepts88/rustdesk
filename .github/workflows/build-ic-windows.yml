@@ -99,13 +99,15 @@ jobs:
           Push-Location libs\portable
           python generate.py -f ..\..\dist -o . -e ..\..\dist\rustdesk.exe
           Pop-Location
-          Write-Host "--- EXE produits ---"
-          Get-ChildItem -Recurse libs\portable -Filter *.exe | ForEach-Object { Write-Host $_.FullName $_.Length }
-          # On prend le plus gros .exe (= l'exe empaqueté) et on le renomme
-          $packed = Get-ChildItem -Recurse libs\portable -Filter *.exe | Sort-Object Length -Descending | Select-Object -First 1
-          if (-not $packed) { Write-Error "Aucun exe portable produit"; exit 1 }
+          Write-Host "--- Recherche de l'exe empaqueté (workspace entier) ---"
+          $packed = Get-ChildItem -Path . -Recurse -Filter "rustdesk-portable-packer.exe" -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $packed) {
+            Write-Host "Packer introuvable. Exe candidats dans target :"
+            Get-ChildItem -Path target -Recurse -Filter *.exe -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_.FullName $_.Length }
+            Write-Error "Aucun exe portable produit"; exit 1
+          }
+          Write-Host "Exe empaqueté trouvé : $($packed.FullName) ($($packed.Length) octets)"
           Copy-Item $packed.FullName "PriseEnMain-IC-Windows.exe" -Force
-          Write-Host "Exe final : PriseEnMain-IC-Windows.exe ($($packed.Length) octets)"
 
       - name: Publier l'artefact (exe unique)
         uses: actions/upload-artifact@v4
