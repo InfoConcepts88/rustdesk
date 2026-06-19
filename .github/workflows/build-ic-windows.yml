@@ -92,6 +92,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item target\release\rustdesk.exe dist\ -Force
           Copy-Item target\release\sciter.dll  dist\ -Force
+          # Dépendance Python requise par le packer
+          python -m pip install --upgrade pip
+          python -m pip install brotli
           # Empaquetage via l'outil RustDesk (génère un exe auto-extractible unique)
           Push-Location libs\portable
           python generate.py -f ..\..\dist -o . -e ..\..\dist\rustdesk.exe
@@ -105,7 +108,3 @@ jobs:
           Write-Host "Exe final : PriseEnMain-IC-Windows.exe ($($packed.Length) octets)"
 
       - name: Publier l'artefact (exe unique)
-        uses: actions/upload-artifact@v4
-        with:
-          name: PriseEnMain-IC-Windows
-          path: PriseEnMain-IC-Windows.exe
