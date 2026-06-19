@@ -108,3 +108,7 @@ jobs:
           Write-Host "Exe final : PriseEnMain-IC-Windows.exe ($($packed.Length) octets)"
 
       - name: Publier l'artefact (exe unique)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PriseEnMain-IC-Windows
+          path: PriseEnMain-IC-Windows.exe
